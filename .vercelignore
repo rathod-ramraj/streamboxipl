@@ -1,4 +1,7 @@
-server/node_modules
-node_modules
+server/
+client/
+node_modules/
 .env
 .env.local
+DEPLOY.md
+.gitignore

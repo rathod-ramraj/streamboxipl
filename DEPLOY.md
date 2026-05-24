@@ -4,7 +4,7 @@
 
 | Part | Platform | Folder | Purpose |
 |------|----------|--------|---------|
-| Frontend | Vercel | `client/` | UI, Shaka Player, `channels.json` |
+| Frontend | Vercel | repo root (`index.html`) | UI, Shaka Player, `channels.json` |
 | Backend | Render | `server/` | Proxy API (`/proxy`, `/health`) |
 
 ## 1. Deploy backend on Render
@@ -29,11 +29,11 @@ Or use the included `server/render.yaml` with Render Blueprint.
 ## 2. Deploy frontend on Vercel
 
 1. [Vercel Dashboard](https://vercel.com) → **Add New Project** → import the same repo.
-2. **Root Directory:** leave empty (repo root). The root `vercel.json` deploys the `client/` folder.
-   - Alternative: set Root Directory to `client` and leave Output Directory blank.
-3. Framework: **Other** (not Next.js).
-4. In **Build & Development Settings**, clear any custom Output Directory override (must not be `client/client`).
-5. Add environment variable:
+2. Connect repo: **`rathod-ramraj/streamboxipl`** (not an empty "Initial commit" repo).
+3. **Root Directory:** leave empty.
+4. Framework: **Other** (not Next.js).
+5. **Output Directory:** leave empty (uses `vercel.json`).
+6. Add environment variable:
 
    | Key | Value |
    |-----|-------|
@@ -43,7 +43,7 @@ Or use the included `server/render.yaml` with Render Blueprint.
 
 ## 3. Update channel credentials
 
-Edit `client/channels.json` (cookies and DRM keys expire). Redeploy Vercel after changes.
+Edit `channels.json` at repo root (cookies and DRM keys expire). Redeploy Vercel after changes.
 
 ## Local development
 
@@ -57,7 +57,7 @@ API_PUBLIC_URL=http://localhost:3001 npm run dev:api
 STREAMBOX_API_URL=http://localhost:3001 npm run dev:client
 ```
 
-Or edit `client/config.js` and set `window.STREAMBOX_API = 'http://localhost:3001'`, then open the client with any static server.
+Or edit `config.js` and set `window.STREAMBOX_API = 'http://localhost:3001'`, then run `npm run dev:client`.
 
 ## Notes
 
