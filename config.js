@@ -1,2 +1,2 @@
-// Generated at build time. Do not edit.
-window.STREAMBOX_API = "";
+// Local: empty = same server as the page (http://localhost:PORT)
+window.STREAMBOX_API = '';

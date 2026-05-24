@@ -1,12 +1,16 @@
 const express = require('express');
 const https = require('https');
 const http = require('http');
+const path = require('path');
 const { URL } = require('url');
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3001;
 const JIO_HOST = 'jiotvpllive.cdn.jio.com';
-const API_PUBLIC_URL = (process.env.API_PUBLIC_URL || '').replace(/\/$/, '');
+const WEB_ROOT = path.join(__dirname, '..');
+const API_PUBLIC_URL = (
+  process.env.API_PUBLIC_URL || `http://localhost:${PORT}`
+).replace(/\/$/, '');
 const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS || '*';
 
 const cookiesByPrefix = new Map();
@@ -36,8 +40,7 @@ app.get('/health', (_req, res) => {
 
 function proxyPath(relativePath) {
   const clean = relativePath.replace(/^\//, '');
-  const path = `/proxy/${clean}`;
-  return API_PUBLIC_URL ? `${API_PUBLIC_URL}${path}` : path;
+  return `${API_PUBLIC_URL}/proxy/${clean}`;
 }
 
 function rememberCookie(target, cookie) {
@@ -61,6 +64,18 @@ function cookieForPath(subpath) {
   return best;
 }
 
+function jioRequestHeaders(cookie) {
+  const headers = {
+    'User-Agent':
+      'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+    Accept: '*/*',
+    Referer: 'https://www.jiotv.com/',
+    Origin: 'https://www.jiotv.com',
+  };
+  if (cookie) headers.Cookie = cookie;
+  return headers;
+}
+
 function fetchUpstream(target, cookie, res) {
   const parsed = new URL(target);
   const lib = parsed.protocol === 'https:' ? https : http;
@@ -70,12 +85,8 @@ function fetchUpstream(target, cookie, res) {
     port: parsed.port || (parsed.protocol === 'https:' ? 443 : 80),
     path: parsed.pathname + parsed.search,
     method: 'GET',
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-      Accept: '*/*',
-    },
+    headers: jioRequestHeaders(cookie),
   };
-  if (cookie) options.headers.Cookie = cookie;
 
   const upstream = lib.request(options, (up) => {
     if (up.statusCode >= 300 && up.statusCode < 400 && up.headers.location) {
@@ -94,11 +105,24 @@ function fetchUpstream(target, cookie, res) {
       const body = Buffer.concat(chunks);
       const ct = up.headers['content-type'] || 'application/octet-stream';
       res.setHeader('Content-Type', ct);
+      const code = up.statusCode || 200;
+
+      if (code >= 400) {
+        res
+          .status(code)
+          .send(
+            `Upstream HTTP ${code}. ` +
+              (code === 403 || code === 451
+                ? 'Cookie expired or invalid — update channels.json.'
+                : 'Stream unavailable.')
+          );
+        return;
+      }
 
       if (ct.includes('dash+xml') || target.endsWith('.mpd')) {
-        res.status(up.statusCode || 200).send(rewriteMpd(body.toString('utf8'), target, cookie));
+        res.status(code).send(rewriteMpd(body.toString('utf8'), target));
       } else {
-        res.status(up.statusCode || 200).send(body);
+        res.status(code).send(body);
       }
     });
   });
@@ -110,7 +134,7 @@ function fetchUpstream(target, cookie, res) {
   upstream.end();
 }
 
-function rewriteMpd(mpd, manifestUrl, cookie) {
+function rewriteMpd(mpd, manifestUrl) {
   const manifestBase = new URL(manifestUrl);
   const manifestDir = manifestBase.href.substring(0, manifestBase.href.lastIndexOf('/') + 1);
 
@@ -164,14 +188,20 @@ app.use('/proxy', (req, res) => {
   fetchUpstream(`https://${JIO_HOST}/${subpath}`, cookie, res);
 });
 
+// Frontend (index.html, channels.json, config.js) — same port as API
+app.use(express.static(WEB_ROOT, { index: 'index.html' }));
+
 const server = app.listen(PORT, () => {
-  console.log(`StreamBox API on port ${PORT}`);
-  if (API_PUBLIC_URL) console.log(`Public URL: ${API_PUBLIC_URL}`);
+  console.log('');
+  console.log('  StreamBox ready');
+  console.log(`  Open:  http://localhost:${PORT}`);
+  console.log(`  API:   http://localhost:${PORT}/health`);
+  console.log('');
 });
 
 server.on('error', (err) => {
   if (err.code === 'EADDRINUSE') {
-    console.error(`Port ${PORT} is already in use.`);
+    console.error(`Port ${PORT} is in use. Try: PORT=${PORT + 1} npm start`);
     process.exit(1);
   }
   throw err;
