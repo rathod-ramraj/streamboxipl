@@ -6,6 +6,7 @@
     "install:all": "npm install --prefix server && npm install --prefix client",
     "dev:api": "npm start --prefix server",
     "dev:client": "npm run build --prefix client && npx --yes serve client -l 3000",
-    "build:client": "npm run build --prefix client"
+    "build:client": "npm run build --prefix client",
+    "vercel-build": "npm run build --prefix client"
   }
 }

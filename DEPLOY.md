@@ -29,9 +29,11 @@ Or use the included `server/render.yaml` with Render Blueprint.
 ## 2. Deploy frontend on Vercel
 
 1. [Vercel Dashboard](https://vercel.com) → **Add New Project** → import the same repo.
-2. Set **Root Directory** to `client`.
-3. Framework: **Other** (uses `vercel.json`).
-4. Add environment variable:
+2. **Root Directory:** leave empty (repo root). The root `vercel.json` deploys the `client/` folder.
+   - Alternative: set Root Directory to `client` and leave Output Directory blank.
+3. Framework: **Other** (not Next.js).
+4. In **Build & Development Settings**, clear any custom Output Directory override (must not be `client/client`).
+5. Add environment variable:
 
    | Key | Value |
    |-----|-------|
