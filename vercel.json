@@ -3,5 +3,14 @@
   "buildCommand": "npm run build",
   "outputDirectory": ".",
   "installCommand": "echo skip",
-  "framework": null
+  "framework": null,
+  "rewrites": [
+    { "source": "/proxy", "destination": "/api/proxy" },
+    { "source": "/proxy/:path*", "destination": "/api/proxy/:path*" },
+    { "source": "/health", "destination": "/api/health" }
+  ],
+  "functions": {
+    "api/proxy.js": { "maxDuration": 30 },
+    "api/proxy/[...path].js": { "maxDuration": 30 }
+  }
 }

@@ -7,6 +7,7 @@
     "vercel-build": "node scripts/build-config.js",
     "install:all": "npm install --prefix server",
     "dev:api": "npm start --prefix server",
-    "dev:client": "npm run build && npx --yes serve . -l 3000"
+    "dev:client": "npm run build && npx --yes serve . -l 3000",
+    "dev": "echo Run dev:api in one terminal and dev:client in another"
   }
 }

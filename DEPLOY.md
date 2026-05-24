@@ -1,66 +1,67 @@
-# StreamBox deployment (Vercel + Render)
+# StreamBox deployment
 
-## Architecture
+## Why streams fail on Vercel/Render alone
 
-| Part | Platform | Folder | Purpose |
-|------|----------|--------|---------|
-| Frontend | Vercel | repo root (`index.html`) | UI, Shaka Player, `channels.json` |
-| Backend | Render | `server/` | Proxy API (`/proxy`, `/health`) |
+Jio CDN returns **HTTP 451** for many cloud servers (US/EU). Cookies in `channels.json` can be fine and still fail.
 
-## 1. Deploy backend on Render
+**Reliable fix:** run the proxy on your home network (Indian IP), expose with a tunnel, point Vercel at it.
 
-1. Push this repo to GitHub.
-2. [Render Dashboard](https://dashboard.render.com) → **New** → **Blueprint** or **Web Service**.
-3. Connect the repo. Set **Root Directory** to `server`.
-4. **Build command:** `npm install`
-5. **Start command:** `npm start`
-6. Add environment variables:
+---
 
-   | Key | Example |
-   |-----|---------|
-   | `API_PUBLIC_URL` | `https://streambox-api.onrender.com` (your Render URL, no trailing slash) |
-   | `ALLOWED_ORIGINS` | `https://your-app.vercel.app` (comma-separated for multiple) |
+## Option A — Home proxy + tunnel (recommended)
 
-7. Deploy. Copy the live URL (e.g. `https://streambox-api.onrender.com`).
-8. Test: open `https://YOUR-RENDER-URL/health` — should return `{"ok":true}`.
-
-Or use the included `server/render.yaml` with Render Blueprint.
-
-## 2. Deploy frontend on Vercel
-
-1. [Vercel Dashboard](https://vercel.com) → **Add New Project** → import the same repo.
-2. Connect repo: **`rathod-ramraj/streamboxipl`** (not an empty "Initial commit" repo).
-3. **Root Directory:** leave empty.
-4. Framework: **Other** (not Next.js).
-5. **Output Directory:** leave empty (uses `vercel.json`).
-6. Add environment variable:
-
-   | Key | Value |
-   |-----|-------|
-   | `STREAMBOX_API_URL` | Your Render URL, e.g. `https://streambox-api.onrender.com` |
-
-5. Deploy. Open the Vercel URL and pick a channel.
-
-## 3. Update channel credentials
-
-Edit `channels.json` at repo root (cookies and DRM keys expire). Redeploy Vercel after changes.
-
-## Local development
+### 1. Run API on your PC
 
 ```bash
-npm run install:all
-
-# Terminal 1 — API on :3001
-API_PUBLIC_URL=http://localhost:3001 npm run dev:api
-
-# Terminal 2 — set API URL and serve client on :3000
-STREAMBOX_API_URL=http://localhost:3001 npm run dev:client
+cd server
+npm install
+API_PUBLIC_URL=https://YOUR-TUNNEL-URL npm start
 ```
 
-Or edit `config.js` and set `window.STREAMBOX_API = 'http://localhost:3001'`, then run `npm run dev:client`.
+### 2. Expose with Cloudflare Tunnel (free)
 
-## Notes
+Install [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-apps/install-and-setup/), then:
 
-- Render free tier sleeps; first request may be slow.
-- `ALLOWED_ORIGINS` must include your exact Vercel URL (`https://...vercel.app`).
-- Do not commit real cookies to a public repo if the repository is public.
+```bash
+cloudflared tunnel --url http://localhost:3001
+```
+
+Copy the `https://....trycloudflare.com` URL.
+
+### 3. Vercel environment variable
+
+| Key | Value |
+|-----|--------|
+| `STREAMBOX_API_URL` | `https://YOUR-TUNNEL-URL` |
+| `FORCE_RENDER_PROXY` | `true` |
+
+Redeploy Vercel. Keep `cloudflared` and `npm start` running while watching.
+
+### 4. Test API
+
+```bash
+curl https://YOUR-TUNNEL-URL/health
+```
+
+---
+
+## Option B — Vercel Edge proxy only
+
+1. Remove `STREAMBOX_API_URL` on Vercel (uses same-origin `/proxy`).
+2. Redeploy. Works only if Jio accepts the edge region IP (often still 451 outside India).
+
+---
+
+## Update stream credentials
+
+Edit `channels.json`: fresh `cookie`, `keyId`, `key` from JioTV for each channel. Commit and redeploy.
+
+Check expiry: cookie contains `exp=UNIX_TIME` — must be in the future.
+
+---
+
+## Vercel frontend
+
+- Repo: `rathod-ramraj/streamboxipl1`
+- Root directory: empty
+- Remove wrong `Output Directory` overrides

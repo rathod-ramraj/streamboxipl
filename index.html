@@ -642,6 +642,19 @@ function normalizeHex(s) {
   return (s || '').replace(/[^a-fA-F0-9]/g, '').toLowerCase();
 }
 
+function cookieExpired(cookie) {
+  const m = (cookie || '').match(/exp=(\d+)/);
+  if (!m) return false;
+  return Date.now() / 1000 > Number(m[1]);
+}
+
+function streamErrorHint() {
+  if (API_BASE && (API_BASE.includes('onrender.com') || API_BASE.includes('vercel.app'))) {
+    return 'Cloud proxy may be blocked by Jio. Run API on your PC: cd server && npm start, expose with cloudflared tunnel, set STREAMBOX_API_URL to that URL on Vercel.';
+  }
+  return 'Update cookie, keyId, and key in channels.json from JioTV, commit, and redeploy. Or use a home proxy (see DEPLOY.md).';
+}
+
 function withProxyCookie(uri, cookie) {
   const u = new URL(uri, window.location.origin);
   if (u.hostname === JIO_HOST) {
@@ -703,10 +716,10 @@ async function initPlayer() {
     let msg = detail?.message || 'Playback failed';
     if (detail?.code === 1001 || detail?.category === shaka.util.Error.Category.NETWORK) {
       const http = detail?.data?.[1];
-      if (http === 403) {
-        msg = 'Access denied (403). Cookie or DRM keys may have expired — update channels.json.';
+      if (http === 403 || http === 451) {
+        msg = `CDN blocked or denied (HTTP ${http}). ` + streamErrorHint();
       } else if (http) {
-        msg = `Network error (HTTP ${http}). Check your connection or refresh credentials.`;
+        msg = `Network error (HTTP ${http}). ` + streamErrorHint();
       }
     }
     if (detail?.code === 6007) {
@@ -765,6 +778,10 @@ async function loadChannel(ch, index) {
       player.configure({ drm: { clearKeys: {} } });
     }
 
+    if (ch.cookie && cookieExpired(ch.cookie)) {
+      throw new Error('Cookie expired for this channel. ' + streamErrorHint());
+    }
+
     setupRequestFilter(ch.cookie || '');
 
     let manifestUrl = ch.url;
@@ -784,8 +801,8 @@ async function loadChannel(ch, index) {
   } catch (e) {
     console.error('Load error:', e);
     const hint = window.location.protocol === 'file:'
-      ? 'Open via the local server: npm start (see terminal for URL)'
-      : 'Cookie or DRM keys may have expired. Update channels.json and retry.';
+      ? 'Open via the local server: npm start (see DEPLOY.md).'
+      : streamErrorHint();
     showError((e.message || 'Could not load stream.') + ' ' + hint);
   }
 }
@@ -1017,12 +1034,6 @@ async function loadChannelsFromFile() {
   if (window.location.protocol === 'file:') {
     channelCount.textContent = 'USE A SERVER';
     showError('Open via Vercel or run: npm run dev:client (see DEPLOY.md).');
-    return;
-  }
-  const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-  if (!API_BASE && !isLocal) {
-    channelCount.textContent = 'NOT CONFIGURED';
-    showError('STREAMBOX_API_URL is not set on Vercel. Point it to your Render backend URL.');
     return;
   }
   try {
