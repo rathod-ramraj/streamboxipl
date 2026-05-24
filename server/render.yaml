@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: streambox-api
+    runtime: node
+    rootDir: server
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      - key: API_PUBLIC_URL
+        sync: false
+      - key: ALLOWED_ORIGINS
+        sync: false
