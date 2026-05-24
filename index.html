@@ -489,6 +489,80 @@
       text-align: center;
       display: none;
     }
+
+    #proxy-panel {
+      margin: 0 12px 12px;
+      padding: 12px;
+      background: #1a1a24;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    #proxy-panel.hidden { display: none; }
+
+    .proxy-panel-title {
+      font-weight: 600;
+      color: var(--accent2);
+      margin-bottom: 6px;
+      font-size: 11px;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+    }
+
+    .proxy-panel-help {
+      color: var(--muted);
+      margin-bottom: 10px;
+    }
+
+    .proxy-panel-help code {
+      background: var(--bg);
+      padding: 1px 4px;
+      border-radius: 3px;
+      font-size: 11px;
+    }
+
+    #proxy-url-input {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px 10px;
+      color: var(--text);
+      font-size: 12px;
+      font-family: 'DM Sans', sans-serif;
+      margin-bottom: 8px;
+    }
+
+    #proxy-url-input:focus { border-color: var(--accent); outline: none; }
+
+    .proxy-panel-actions { display: flex; gap: 8px; }
+
+    .proxy-btn {
+      flex: 1;
+      padding: 7px 10px;
+      border: none;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: 'DM Sans', sans-serif;
+    }
+
+    #proxy-save-btn { background: var(--accent); color: #fff; }
+    #proxy-save-btn:hover { background: var(--accent2); }
+    #proxy-test-btn { background: var(--border); color: var(--text); }
+
+    #proxy-status {
+      margin-top: 8px;
+      font-size: 11px;
+      color: var(--muted);
+      min-height: 16px;
+    }
+
+    #proxy-status.ok { color: #6fcf97; }
+    #proxy-status.err { color: var(--accent2); }
   </style>
 </head>
 <body>
@@ -507,6 +581,7 @@
     <span><span class="kbd">F</span> Fullscreen</span>
     <span><span class="kbd">M</span> Mute</span>
     <span><span class="kbd">↑↓</span> Volume</span>
+    <button type="button" id="topbar-proxy-btn" class="proxy-btn" style="background:var(--border);color:var(--text);padding:4px 10px;font-size:11px;">Proxy</button>
   </div>
 </div>
 
@@ -517,6 +592,16 @@
   <div id="sidebar">
     <div id="search-wrap">
       <input id="search" type="text" placeholder="Search channels…" autocomplete="off" />
+    </div>
+    <div id="proxy-panel" class="hidden">
+      <div class="proxy-panel-title">Home proxy URL</div>
+      <p class="proxy-panel-help">Vercel is blocked by Jio. On your Mac run <code>npm start</code> in <code>server/</code>, then <code>cloudflared tunnel --url http://localhost:3001</code>. Paste the https URL below.</p>
+      <input id="proxy-url-input" type="url" placeholder="https://xxxx.trycloudflare.com" spellcheck="false" />
+      <div class="proxy-panel-actions">
+        <button type="button" id="proxy-save-btn" class="proxy-btn">Save</button>
+        <button type="button" id="proxy-test-btn" class="proxy-btn">Test</button>
+      </div>
+      <div id="proxy-status"></div>
     </div>
     <div id="channel-count">Loading…</div>
     <div id="channel-list">
@@ -571,16 +656,33 @@
 
 <script src="config.js"></script>
 <script>
-// ── API base (empty = same origin for local single-server dev) ────────────────
-const API_BASE = (window.STREAMBOX_API || '').replace(/\/$/, '');
+// ── API base: localStorage home proxy overrides Vercel cloud (blocked by Jio) ─
+const PROXY_STORAGE_KEY = 'streambox_proxy_url';
+
+function getApiBase() {
+  const saved = (localStorage.getItem(PROXY_STORAGE_KEY) || '').trim().replace(/\/$/, '');
+  if (saved) return saved;
+  return (window.STREAMBOX_API || '').replace(/\/$/, '');
+}
+
+function isHostedDeploy() {
+  const h = window.location.hostname;
+  return h.includes('vercel.app') || h.includes('onrender.com');
+}
+
+function needsHomeProxy() {
+  return isHostedDeploy() && !getApiBase();
+}
 
 function apiUrl(path) {
   const p = path.startsWith('/') ? path : '/' + path;
-  return API_BASE ? API_BASE + p : p;
+  const base = getApiBase();
+  return base ? base + p : p;
 }
 
 function apiOrigin() {
-  return API_BASE ? new URL(API_BASE).origin : window.location.origin;
+  const base = getApiBase();
+  return base ? new URL(base).origin : window.location.origin;
 }
 
 // ── DOM refs ──────────────────────────────────────────────────────────────────
@@ -603,6 +705,12 @@ const ctrlPlay       = document.getElementById('ctrl-play');
 const ctrlMute       = document.getElementById('ctrl-mute');
 const ctrlVolume     = document.getElementById('ctrl-volume');
 const ctrlFullscreen = document.getElementById('ctrl-fullscreen');
+const proxyPanel     = document.getElementById('proxy-panel');
+const proxyUrlInput  = document.getElementById('proxy-url-input');
+const proxySaveBtn   = document.getElementById('proxy-save-btn');
+const proxyTestBtn   = document.getElementById('proxy-test-btn');
+const proxyStatus    = document.getElementById('proxy-status');
+const topbarProxyBtn = document.getElementById('topbar-proxy-btn');
 
 const JIO_HOST = 'jiotvpllive.cdn.jio.com';
 
@@ -649,11 +757,78 @@ function cookieExpired(cookie) {
 }
 
 function streamErrorHint() {
-  if (API_BASE && (API_BASE.includes('onrender.com') || API_BASE.includes('vercel.app'))) {
-    return 'Cloud proxy may be blocked by Jio. Run API on your PC: cd server && npm start, expose with cloudflared tunnel, set STREAMBOX_API_URL to that URL on Vercel.';
+  if (needsHomeProxy() || isHostedDeploy()) {
+    return 'Open Proxy in the sidebar, paste your home tunnel URL (cloudflared), click Save, then Try Again.';
   }
-  return 'Update cookie, keyId, and key in channels.json from JioTV, commit, and redeploy. Or use a home proxy (see DEPLOY.md).';
+  return 'Update cookie, keyId, and key in channels.json from JioTV.';
 }
+
+function showProxyPanel(show) {
+  proxyPanel.classList.toggle('hidden', !show);
+}
+
+function loadProxySettingsUi() {
+  const saved = localStorage.getItem(PROXY_STORAGE_KEY) || '';
+  proxyUrlInput.value = saved;
+  if (needsHomeProxy()) showProxyPanel(true);
+}
+
+async function testProxyConnection() {
+  const url = proxyUrlInput.value.trim().replace(/\/$/, '');
+  if (!url) {
+    proxyStatus.textContent = 'Enter a URL first';
+    proxyStatus.className = 'err';
+    return false;
+  }
+  proxyStatus.textContent = 'Testing...';
+  proxyStatus.className = '';
+  try {
+    const res = await fetch(url + '/health', { mode: 'cors' });
+    const data = await res.json();
+    if (res.ok && data.ok) {
+      proxyStatus.textContent = 'Connected';
+      proxyStatus.className = 'ok';
+      return true;
+    }
+    proxyStatus.textContent = 'Bad response: HTTP ' + res.status;
+    proxyStatus.className = 'err';
+    return false;
+  } catch (e) {
+    proxyStatus.textContent = 'Cannot reach proxy. Is cloudflared running?';
+    proxyStatus.className = 'err';
+    return false;
+  }
+}
+
+function saveProxyUrl() {
+  const url = proxyUrlInput.value.trim().replace(/\/$/, '');
+  if (!url) {
+    localStorage.removeItem(PROXY_STORAGE_KEY);
+    proxyStatus.textContent = 'Cleared';
+    proxyStatus.className = '';
+    showProxyPanel(needsHomeProxy());
+    return;
+  }
+  try {
+    new URL(url);
+  } catch {
+    proxyStatus.textContent = 'Invalid URL';
+    proxyStatus.className = 'err';
+    return;
+  }
+  localStorage.setItem(PROXY_STORAGE_KEY, url);
+  proxyStatus.textContent = 'Saved';
+  proxyStatus.className = 'ok';
+  showProxyPanel(false);
+  showOSD('Proxy saved');
+  if (currentChannel) loadChannel(currentChannel, currentIndex);
+}
+
+proxySaveBtn.addEventListener('click', saveProxyUrl);
+proxyTestBtn.addEventListener('click', testProxyConnection);
+topbarProxyBtn.addEventListener('click', () => {
+  showProxyPanel(proxyPanel.classList.contains('hidden'));
+});
 
 function withProxyCookie(uri, cookie) {
   const u = new URL(uri, window.location.origin);
@@ -664,11 +839,13 @@ function withProxyCookie(uri, cookie) {
   const origin = apiOrigin();
   if (u.origin === origin && u.pathname.startsWith('/proxy/') && cookie && !u.searchParams.has('cookie')) {
     u.searchParams.set('cookie', cookie);
-    return API_BASE ? apiUrl(u.pathname + '?' + u.searchParams.toString()) : u.pathname + '?' + u.searchParams.toString();
+    const base = getApiBase();
+    return base ? apiUrl(u.pathname + '?' + u.searchParams.toString()) : u.pathname + '?' + u.searchParams.toString();
   }
   if (u.origin === origin && u.pathname === '/proxy' && u.searchParams.has('url') && cookie) {
     u.searchParams.set('cookie', cookie);
-    return API_BASE ? apiUrl('/proxy?' + u.searchParams.toString()) : '/proxy?' + u.searchParams.toString();
+    const base = getApiBase();
+    return base ? apiUrl('/proxy?' + u.searchParams.toString()) : '/proxy?' + u.searchParams.toString();
   }
   return uri;
 }
@@ -764,6 +941,12 @@ async function loadChannel(ch, index) {
   liveBadge.classList.add('show');
   showOSD('Live: ' + ch.name);
   stopLiveEnforcement();
+
+  if (needsHomeProxy()) {
+    showProxyPanel(true);
+    showError('Deployed site needs your home proxy. Paste cloudflared URL in the sidebar, click Save.');
+    return;
+  }
 
   showLoading();
 
@@ -1024,8 +1207,10 @@ async function loadChannelsFromFile() {
     : (window.location.protocol === 'file:' ? 'Use npm start' : '');
   renderChannels(allChannels);
 
-  if (allChannels.length > 0) {
+  if (allChannels.length > 0 && !needsHomeProxy()) {
     loadChannel(allChannels[0], 0);
+  } else if (needsHomeProxy()) {
+    channelCount.textContent = allChannels.length + ' CHANNELS — SET PROXY';
   }
 }
 
@@ -1037,6 +1222,7 @@ async function loadChannelsFromFile() {
     return;
   }
   try {
+    loadProxySettingsUi();
     await initPlayer();
     await loadChannelsFromFile();
   } catch (e) {
